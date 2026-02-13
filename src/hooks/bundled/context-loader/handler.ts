@@ -1,10 +1,7 @@
 import { execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import type {
-  WorkspaceBootstrapFile,
-  WorkspaceBootstrapFileName,
-} from "../../../agents/workspace.js";
+import type { WorkspaceBootstrapFileName } from "../../../agents/workspace.js";
 import { isSubagentSessionKey } from "../../../routing/session-key.js";
 import { resolveHookConfig } from "../../config.js";
 import { isAgentBootstrapEvent, type HookHandler } from "../../hooks.js";
