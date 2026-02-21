@@ -15,6 +15,7 @@ interface SessionKeyInfo {
   platform: string;
   peerKind?: string;
   peerId?: string;
+  threadTs?: string;
 }
 
 function parseSessionKeyInfo(sessionKey: string): SessionKeyInfo | undefined {
@@ -28,11 +29,28 @@ function parseSessionKeyInfo(sessionKey: string): SessionKeyInfo | undefined {
   if (!platform || platform === "main") {
     return undefined;
   }
-  return {
+  const info: SessionKeyInfo = {
     platform,
     peerKind: parts[3],
     peerId: parts[4],
   };
+  // Extract thread timestamp if present
+  const threadIdx = parts.indexOf("thread");
+  if (threadIdx !== -1 && parts[threadIdx + 1]) {
+    info.threadTs = parts[threadIdx + 1];
+  }
+  return info;
+}
+
+/**
+ * Build a position header so the agent always knows where it is.
+ */
+function buildPositionHeader(info: SessionKeyInfo, channelName?: string): string {
+  const channel = channelName ? `#${channelName}` : (info.peerId ?? info.platform);
+  if (info.threadTs) {
+    return `> POSITION: Thread in ${channel} (thread_ts: ${info.threadTs})\n> To post NEW top-level messages in the channel, use message send WITHOUT thread_ts.\n`;
+  }
+  return `> POSITION: Main channel ${channel}\n`;
 }
 
 /**
@@ -157,18 +175,19 @@ const contextLoaderHook: HookHandler = async (event) => {
   // Determine channel from session key
   const contextDir = path.join(workspaceDir, "memory", "working-context");
   let resolvedChannel: string | undefined;
+  let sessionInfo: SessionKeyInfo | undefined;
 
   if (context.sessionKey) {
-    const info = parseSessionKeyInfo(context.sessionKey);
-    if (info) {
+    sessionInfo = parseSessionKeyInfo(context.sessionKey);
+    if (sessionInfo) {
       // If we have a peer ID (e.g. Slack channel ID), resolve via frontmatter mapping
-      if (info.peerId) {
+      if (sessionInfo.peerId) {
         const channelMap = buildChannelIdMap(contextDir);
-        resolvedChannel = channelMap.get(info.peerId.toLowerCase());
+        resolvedChannel = channelMap.get(sessionInfo.peerId.toLowerCase());
       }
       // Fall back to platform name if no peer-based match
       if (!resolvedChannel) {
-        resolvedChannel = info.platform;
+        resolvedChannel = sessionInfo.platform;
       }
     }
   }
@@ -195,6 +214,12 @@ const contextLoaderHook: HookHandler = async (event) => {
   }
 
   const sections: string[] = [];
+
+  // Inject position header FIRST so the agent always knows where it is
+  if (sessionInfo) {
+    sections.push(buildPositionHeader(sessionInfo, resolvedChannel));
+  }
+
   sections.push(contextContent);
 
   // Execute boot queries
