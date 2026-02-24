@@ -64,6 +64,14 @@ export function applyReplyThreading(params: {
   const applyReplyToMode = createReplyToModeFilterForChannel(replyToMode, replyToChannel);
   return payloads
     .map((payload) => applyReplyTagsToPayload(payload, currentMessageId))
+    .map((payload) => {
+      // When replyToMode is "all", auto-thread under triggering message
+      // even if the agent didn't include a [[reply_to:...]] tag
+      if (replyToMode === "all" && !payload.replyToId && currentMessageId) {
+        return { ...payload, replyToId: currentMessageId.trim() };
+      }
+      return payload;
+    })
     .filter(isRenderablePayload)
     .map(applyReplyToMode);
 }
