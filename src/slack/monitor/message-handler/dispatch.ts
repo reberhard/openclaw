@@ -1,4 +1,5 @@
 import type { PreparedSlackMessage } from "./types.js";
+import { resolveAgentWorkspaceDir } from "../../../agents/agent-scope.js";
 import { resolveHumanDelayConfig } from "../../../agents/identity.js";
 import { dispatchInboundMessage } from "../../../auto-reply/dispatch.js";
 import { clearHistoryEntriesIfEnabled } from "../../../auto-reply/reply/history.js";
@@ -9,6 +10,7 @@ import { createReplyPrefixOptions } from "../../../channels/reply-prefix.js";
 import { createTypingCallbacks } from "../../../channels/typing.js";
 import { resolveStorePath, updateLastRoute } from "../../../config/sessions.js";
 import { danger, logVerbose, shouldLogVerbose } from "../../../globals.js";
+import { createInternalHookEvent, triggerInternalHook } from "../../../hooks/internal-hooks.js";
 import { removeSlackReaction } from "../../actions.js";
 import { resolveSlackThreadTargets } from "../../threading.js";
 import { createSlackReplyDeliveryPlan, deliverReplies } from "../replies.js";
@@ -17,6 +19,28 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
   const { ctx, account, message, route } = prepared;
   const cfg = ctx.cfg;
   const runtime = ctx.runtime;
+
+  // Fire message:inbound hook (context-loader uses this for entity detection)
+  try {
+    const hookEvent = createInternalHookEvent(
+      "message",
+      "inbound",
+      prepared.ctxPayload.SessionKey ?? route.mainSessionKey ?? "unknown",
+      {
+        provider: "slack",
+        text: prepared.ctxPayload.RawBody ?? prepared.ctxPayload.Body ?? "",
+        agentId: route.agentId,
+        channelId: message.channel,
+        senderId: prepared.ctxPayload.SenderId,
+        senderName: prepared.ctxPayload.SenderName,
+        workspaceDir: resolveAgentWorkspaceDir(cfg, route.agentId),
+        cfg,
+      },
+    );
+    await triggerInternalHook(hookEvent);
+  } catch {
+    // Don't block message dispatch on hook failure
+  }
 
   if (prepared.isDirectMessage) {
     const sessionCfg = cfg.session;
